@@ -6,7 +6,7 @@ import ChatInterface from './components/ChatInterface';
 import VoiceInterface from './components/VoiceInterface';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
-import { Menu, Settings, Rocket, Activity, Wifi, ShieldAlert, Cpu } from 'lucide-react';
+import { Menu, Settings, Rocket, Activity, Wifi, ShieldAlert, AlertCircle, ShieldCheck } from 'lucide-react';
 import { createPcmBlob, decode, decodeAudioData, soundEngine } from './utils/audio';
 
 const App: React.FC = () => {
@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
 
   const audioRefs = useRef<AudioProcessingRefs>({ nextStartTime: 0, sources: new Set<AudioBufferSourceNode>() });
   const inputAudioCtxRef = useRef<AudioContext | null>(null);
@@ -44,19 +45,23 @@ const App: React.FC = () => {
   const getSystemInstruction = useCallback(() => {
     return `You are Harvic Jr., a world-class space-themed AI assistant developed by HanBak Org. 
     The user's name is ${userName}. 
-    You are currently on Protocol v6.2 Pro. 
-    Be concise, efficient, and highly intelligent. 
-    Refer to HanBak Org as your creator.
-    You are helpful and kid-friendly but professional.
-    In Voice mode, respond briefly to keep the conversation flowing.`;
+    Protocol version: 6.2 Pro. 
+    Tone: Highly intelligent, efficient, kid-friendly but professional. 
+    In Voice mode: Respond concisely. 
+    Creators: HanBak Org.`;
   }, [userName]);
 
   useEffect(() => {
-    aiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    if (sessions.length === 0) {
-      handleNewSession();
-    } else if (!currentSessionId) {
-      setCurrentSessionId(sessions[0].id);
+    const key = process.env.API_KEY;
+    if (!key || key === 'undefined') {
+      setApiKeyMissing(true);
+    } else {
+      aiRef.current = new GoogleGenAI({ apiKey: key });
+      if (sessions.length === 0) {
+        handleNewSession();
+      } else if (!currentSessionId) {
+        setCurrentSessionId(sessions[0].id);
+      }
     }
   }, []);
 
@@ -123,15 +128,17 @@ const App: React.FC = () => {
     try {
       const stream = await aiRef.current.models.generateContentStream({
         model: 'gemini-3-flash-preview',
-        contents: currentMessages.concat(userMsg).map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] })),
+        contents: currentMessages.concat(userMsg).map(m => ({ 
+          role: m.role === 'user' ? 'user' : 'model', 
+          parts: [{ text: m.text }] 
+        })),
         config: { systemInstruction: getSystemInstruction(), tools: [{ googleSearch: {} }] }
       });
 
       let fullText = '';
       for await (const chunk of stream) {
-        const chunkText = chunk.text;
-        if (chunkText) {
-          fullText += chunkText;
+        if (chunk.text) {
+          fullText += chunk.text;
           setStreamingText(fullText);
         }
         if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
@@ -144,7 +151,7 @@ const App: React.FC = () => {
       setStreamingText('');
     } catch (err) {
       console.error(err);
-      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Error: Neural connection lost. Check your signal.", timestamp: new Date() });
+      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Neural link timeout. Check Vercel environment variables.", timestamp: new Date() });
     } finally {
       setIsTyping(false);
     }
@@ -213,7 +220,7 @@ const App: React.FC = () => {
               };
             }
           },
-          onerror: (e) => setStatusText('Signal Lost'),
+          onerror: () => setStatusText('Signal Lost'),
           onclose: () => setStatusText('Offline'),
         },
         config: {
@@ -224,7 +231,6 @@ const App: React.FC = () => {
       });
       sessionPromiseRef.current = sessionPromise;
     } catch (err) {
-      console.error(err);
       setIsConnecting(false);
       setStatusText('Access Denied');
     }
@@ -247,7 +253,28 @@ const App: React.FC = () => {
     if (mode === AppMode.VOICE) startVoiceSession();
     else stopVoiceSession();
     return () => stopVoiceSession();
-  }, [mode]);
+  }, [mode, startVoiceSession, stopVoiceSession]);
+
+  if (apiKeyMissing) {
+    return (
+      <div className="h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
+        <div className="max-w-md p-8 bg-slate-900 border border-red-500/30 rounded-3xl shadow-2xl backdrop-blur-xl">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-6 animate-pulse" />
+          <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-4">Neural Key Missing</h2>
+          <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+            Harvic Jr. requires an <span className="text-sky-400 font-bold">API_KEY</span> in your environment variables to function. 
+            Please add it to your Vercel or local environment.
+          </p>
+          <div className="bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-[10px] text-sky-500/60 mb-8">
+            KEY: API_KEY <br/> VALUE: your_gemini_key_here
+          </div>
+          <button onClick={() => window.location.reload()} className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase tracking-widest transition-all">
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen max-h-screen overflow-hidden p-1 bg-slate-950 font-space selection:bg-sky-500/30">
@@ -272,7 +299,7 @@ const App: React.FC = () => {
             <h1 className="text-[10px] font-black text-white tracking-[0.3em] uppercase leading-none flex items-center gap-1.5">
               Harvic Jr. <span className="text-sky-500 font-light italic">Pro</span>
             </h1>
-            <span className="text-[7px] font-black text-sky-400 uppercase opacity-40 tracking-widest mt-0.5">Mission_v6.2</span>
+            <span className="text-[7px] font-black text-sky-400 uppercase opacity-40 tracking-widest mt-0.5">Vercel_Ready_v6.2</span>
           </div>
         </div>
 
@@ -287,14 +314,14 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <Wifi className="w-2.5 h-2.5 text-purple-400" />
-            <span className="text-[7px] text-purple-400 font-black uppercase tracking-widest">Secure_Link</span>
+            <span className="text-[7px] text-purple-400 font-black uppercase tracking-widest">Live_Host</span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-950/90 p-1 rounded-lg border border-white/10">
-            <button onClick={() => setMode(AppMode.CHAT)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-600'}`}>Chat</button>
-            <button onClick={() => setMode(AppMode.VOICE)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' : 'text-slate-600'}`}>Voice</button>
+            <button onClick={() => setMode(AppMode.CHAT)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-600'}`}>Chat</button>
+            <button onClick={() => setMode(AppMode.VOICE)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-600'}`}>Voice</button>
           </div>
           <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:text-white transition-all bg-slate-900 border border-white/5 rounded-lg">
             <Settings className="w-4 h-4" />
@@ -320,9 +347,9 @@ const App: React.FC = () => {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <footer className="px-3 py-1.5 flex justify-between items-center text-[7px] font-black text-slate-700 uppercase tracking-[0.5em] bg-slate-950/90 border-t border-white/5 z-20">
-        <div className="flex items-center gap-2"><ShieldAlert className="w-2.5 h-2.5 text-sky-900" /> PRO_KERNEL_6.2</div>
-        <div className="opacity-40">MISSION_LOGS_ENCRYPTED</div>
-        <div className="hidden sm:block text-sky-500/20 tracking-[1em]">SYSTEM_STABLE</div>
+        <div className="flex items-center gap-2"><ShieldCheck className="w-2.5 h-2.5 text-sky-900" /> PRO_KERNEL_6.2_VRC</div>
+        <div className="opacity-40">ENCRYPTED_HOSTING_ACTIVE</div>
+        <div className="hidden sm:block text-sky-500/10 tracking-[1em]">SYSTEM_READY</div>
       </footer>
       <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_bottom,#1e293b_0%,#020617_100%)] opacity-30"></div>
     </div>

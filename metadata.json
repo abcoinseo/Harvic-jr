@@ -1,0 +1,7 @@
+{
+  "name": "Jarvis Jr. - Galactic Explorer",
+  "description": "A high-tech, kid-friendly AI assistant with real-time voice and chat controls, featuring a pro Jarvis-inspired space theme.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

@@ -6,17 +6,21 @@ import ChatInterface from './components/ChatInterface';
 import VoiceInterface from './components/VoiceInterface';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
-import { Menu, Settings, Rocket, Activity, Wifi, ShieldAlert, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Menu, Settings, Rocket, Activity, Wifi, ShieldAlert, AlertCircle, ShieldCheck, Loader2 } from 'lucide-react';
 import { createPcmBlob, decode, decodeAudioData, soundEngine } from './utils/audio';
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.CHAT);
-  const [userName, setUserName] = useState<string>(localStorage.getItem('harvic_user_name') || 'Commander');
+  const [userName, setUserName] = useState<string>(() => localStorage.getItem('harvic_user_name') || 'Commander');
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem('harvic_sessions');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('harvic_sessions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
   });
-  const [currentSessionId, setCurrentSessionId] = useState<string>(localStorage.getItem('harvic_last_session') || '');
+  const [currentSessionId, setCurrentSessionId] = useState<string>(() => localStorage.getItem('harvic_last_session') || '');
   
   const [isTyping, setIsTyping] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -27,7 +31,8 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [streamingText, setStreamingText] = useState('');
-  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorState, setErrorState] = useState<'API_KEY_MISSING' | 'GENERIC_ERROR' | null>(null);
 
   const audioRefs = useRef<AudioProcessingRefs>({ nextStartTime: 0, sources: new Set<AudioBufferSourceNode>() });
   const inputAudioCtxRef = useRef<AudioContext | null>(null);
@@ -44,44 +49,62 @@ const App: React.FC = () => {
 
   const getSystemInstruction = useCallback(() => {
     return `You are Harvic Jr., a world-class space-themed AI assistant developed by HanBak Org. 
-    The user's name is ${userName}. 
-    Protocol version: 6.2 Pro. 
-    Tone: Highly intelligent, efficient, kid-friendly but professional. 
-    In Voice mode: Respond concisely. 
-    Creators: HanBak Org.`;
+    The user's name is ${userName}. Protocol: 6.2 Pro. Tone: Professional, Efficient, and Space-Explorer themed.`;
   }, [userName]);
 
+  // Safe Initialization
   useEffect(() => {
-    const key = process.env.API_KEY;
-    if (!key || key === 'undefined') {
-      setApiKeyMissing(true);
-    } else {
-      aiRef.current = new GoogleGenAI({ apiKey: key });
-      if (sessions.length === 0) {
-        handleNewSession();
-      } else if (!currentSessionId) {
-        setCurrentSessionId(sessions[0].id);
+    const initApp = async () => {
+      try {
+        // Safe check for process.env
+        const key = typeof process !== 'undefined' ? process.env.API_KEY : null;
+        
+        if (!key || key === 'undefined') {
+          setErrorState('API_KEY_MISSING');
+        } else {
+          aiRef.current = new GoogleGenAI({ apiKey: key });
+          
+          if (sessions.length === 0) {
+            const newId = Date.now().toString();
+            const initialSession: ChatSession = {
+              id: newId,
+              title: 'First Mission',
+              messages: [],
+              timestamp: new Date()
+            };
+            setSessions([initialSession]);
+            setCurrentSessionId(newId);
+          } else if (!currentSessionId) {
+            setCurrentSessionId(sessions[0].id);
+          }
+        }
+      } catch (err) {
+        console.error("Initialization failed:", err);
+        setErrorState('GENERIC_ERROR');
+      } finally {
+        // Short delay for smoother UI entry
+        setTimeout(() => setIsLoading(false), 800);
       }
-    }
+    };
+
+    initApp();
   }, []);
 
+  // Persistence
   useEffect(() => {
-    localStorage.setItem('harvic_user_name', userName);
-  }, [userName]);
-
-  useEffect(() => {
-    if (sessions.length > 0) {
+    if (!isLoading) {
+      localStorage.setItem('harvic_user_name', userName);
       localStorage.setItem('harvic_sessions', JSON.stringify(sessions));
       localStorage.setItem('harvic_last_session', currentSessionId);
     }
-  }, [sessions, currentSessionId]);
+  }, [userName, sessions, currentSessionId, isLoading]);
 
   const saveMessage = useCallback((msg: Message) => {
     setSessions(prev => prev.map(s => {
       if (s.id === currentSessionId) {
         const updatedMessages = [...s.messages, msg];
         let newTitle = s.title;
-        if ((s.title === 'New Mission' || !s.title) && msg.role === 'user') {
+        if ((s.title === 'New Mission' || s.title === 'First Mission') && msg.role === 'user') {
           newTitle = msg.text.length > 25 ? msg.text.substring(0, 25) + '...' : msg.text;
         }
         return { ...s, messages: updatedMessages, title: newTitle };
@@ -101,21 +124,6 @@ const App: React.FC = () => {
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newId);
     setIsSidebarOpen(false);
-    soundEngine.playUnmute();
-  };
-
-  const handleSelectSession = (id: string) => {
-    setCurrentSessionId(id);
-    setIsSidebarOpen(false);
-    soundEngine.playReceive();
-  };
-
-  const handleClearAllSessions = () => {
-    setSessions([]);
-    setCurrentSessionId('');
-    localStorage.removeItem('harvic_sessions');
-    localStorage.removeItem('harvic_last_session');
-    handleNewSession();
   };
 
   const handleSendChatMessage = async (text: string) => {
@@ -141,9 +149,6 @@ const App: React.FC = () => {
           fullText += chunk.text;
           setStreamingText(fullText);
         }
-        if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-          setGroundingMetadata(chunk.candidates[0].groundingMetadata.groundingChunks);
-        }
       }
 
       soundEngine.playReceive();
@@ -151,7 +156,7 @@ const App: React.FC = () => {
       setStreamingText('');
     } catch (err) {
       console.error(err);
-      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Neural link timeout. Check Vercel environment variables.", timestamp: new Date() });
+      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Signal Interrupted. Check your neural bridge configuration.", timestamp: new Date() });
     } finally {
       setIsTyping(false);
     }
@@ -175,7 +180,7 @@ const App: React.FC = () => {
     if (!aiRef.current) return;
     try {
       setIsConnecting(true);
-      setStatusText('Initializing...');
+      setStatusText('Syncing...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
       if (!inputAudioCtxRef.current) inputAudioCtxRef.current = new AudioContext({ sampleRate: 16000 });
@@ -216,11 +221,11 @@ const App: React.FC = () => {
               audioRefs.current.sources.add(source);
               source.onended = () => {
                 audioRefs.current.sources.delete(source);
-                if (audioRefs.current.sources.size === 0) setStatusText('Awaiting Command');
+                if (audioRefs.current.sources.size === 0) setStatusText('Ready');
               };
             }
           },
-          onerror: () => setStatusText('Signal Lost'),
+          onerror: () => setStatusText('Logic Error'),
           onclose: () => setStatusText('Offline'),
         },
         config: {
@@ -232,7 +237,7 @@ const App: React.FC = () => {
       sessionPromiseRef.current = sessionPromise;
     } catch (err) {
       setIsConnecting(false);
-      setStatusText('Access Denied');
+      setStatusText('Link Failed');
     }
   }, [isMuted, updateVolume, getSystemInstruction]);
 
@@ -255,21 +260,32 @@ const App: React.FC = () => {
     return () => stopVoiceSession();
   }, [mode, startVoiceSession, stopVoiceSession]);
 
-  if (apiKeyMissing) {
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-sky-500">
+        <Loader2 className="w-12 h-12 animate-spin mb-4" />
+        <p className="text-[10px] font-black uppercase tracking-[0.4em] animate-pulse">Initializing Neural Bridge...</p>
+      </div>
+    );
+  }
+
+  if (errorState === 'API_KEY_MISSING') {
     return (
       <div className="h-screen bg-slate-950 flex items-center justify-center p-6 text-center">
-        <div className="max-w-md p-8 bg-slate-900 border border-red-500/30 rounded-3xl shadow-2xl backdrop-blur-xl">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-6 animate-pulse" />
-          <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-4">Neural Key Missing</h2>
+        <div className="max-w-md p-8 bg-slate-900 border border-red-500/30 rounded-3xl shadow-2xl">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-6 animate-bounce" />
+          <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-4">API_KEY Required</h2>
           <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-            Harvic Jr. requires an <span className="text-sky-400 font-bold">API_KEY</span> in your environment variables to function. 
-            Please add it to your Vercel or local environment.
+            Harvic Jr. cannot access the galactic mainframe without a valid <strong>API_KEY</strong>. 
+            Please add it to your Vercel Project Settings as an Environment Variable.
           </p>
-          <div className="bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-[10px] text-sky-500/60 mb-8">
-            KEY: API_KEY <br/> VALUE: your_gemini_key_here
+          <div className="bg-black/50 p-4 rounded-xl border border-white/5 font-mono text-[10px] text-sky-400/60 mb-8 text-left">
+            Vercel Dashboard > Settings > Environment Variables <br/>
+            Key: API_KEY <br/>
+            Value: [Your_Gemini_Key]
           </div>
-          <button onClick={() => window.location.reload()} className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase tracking-widest transition-all">
-            Retry Connection
+          <button onClick={() => window.location.reload()} className="w-full py-3 bg-sky-500 hover:bg-sky-600 text-white rounded-xl font-black uppercase tracking-widest transition-all">
+            Reload System
           </button>
         </div>
       </div>
@@ -285,25 +301,25 @@ const App: React.FC = () => {
         currentSessionId={currentSessionId}
         userName={userName}
         setUserName={setUserName}
-        onSelectSession={handleSelectSession}
+        onSelectSession={(id) => { setCurrentSessionId(id); setIsSidebarOpen(false); }}
         onNewSession={handleNewSession}
-        onClearAllSessions={handleClearAllSessions}
+        onClearAllSessions={() => { setSessions([]); handleNewSession(); }}
       />
 
       <header className="flex items-center justify-between px-3 py-2 bg-slate-900/80 backdrop-blur-3xl border border-white/10 rounded-xl shadow-2xl z-20">
         <div className="flex items-center gap-3">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-slate-800 rounded-lg transition-all text-slate-400 hover:text-sky-400">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-slate-800 rounded-lg transition-all text-slate-400">
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex flex-col">
             <h1 className="text-[10px] font-black text-white tracking-[0.3em] uppercase leading-none flex items-center gap-1.5">
               Harvic Jr. <span className="text-sky-500 font-light italic">Pro</span>
             </h1>
-            <span className="text-[7px] font-black text-sky-400 uppercase opacity-40 tracking-widest mt-0.5">Vercel_Ready_v6.2</span>
+            <span className="text-[7px] font-black text-sky-400 uppercase opacity-40 tracking-widest mt-0.5">Secure_Host_v6.2</span>
           </div>
         </div>
 
-        <div className="hidden lg:flex items-center gap-6 bg-slate-950/80 px-4 py-1 rounded-full border border-white/5 shadow-inner">
+        <div className="hidden lg:flex items-center gap-6 bg-slate-950/80 px-4 py-1 rounded-full border border-white/5">
           <div className="flex items-center gap-2">
             <Activity className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
             <span className="text-[7px] text-emerald-400 font-black uppercase tracking-widest">Neural_Sync</span>
@@ -312,16 +328,12 @@ const App: React.FC = () => {
             <Rocket className="w-2.5 h-2.5 text-sky-400" />
             <span className="text-[7px] text-sky-400 font-black uppercase tracking-widest">{userName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Wifi className="w-2.5 h-2.5 text-purple-400" />
-            <span className="text-[7px] text-purple-400 font-black uppercase tracking-widest">Live_Host</span>
-          </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-950/90 p-1 rounded-lg border border-white/10">
-            <button onClick={() => setMode(AppMode.CHAT)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-600'}`}>Chat</button>
-            <button onClick={() => setMode(AppMode.VOICE)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-600'}`}>Voice</button>
+            <button onClick={() => setMode(AppMode.CHAT)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.CHAT ? 'bg-sky-500 text-white' : 'text-slate-600'}`}>Chat</button>
+            <button onClick={() => setMode(AppMode.VOICE)} className={`px-3 py-1.5 rounded-md transition-all text-[9px] font-black uppercase tracking-widest ${mode === AppMode.VOICE ? 'bg-purple-600 text-white' : 'text-slate-600'}`}>Voice</button>
           </div>
           <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-500 hover:text-white transition-all bg-slate-900 border border-white/5 rounded-lg">
             <Settings className="w-4 h-4" />
@@ -347,9 +359,8 @@ const App: React.FC = () => {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       <footer className="px-3 py-1.5 flex justify-between items-center text-[7px] font-black text-slate-700 uppercase tracking-[0.5em] bg-slate-950/90 border-t border-white/5 z-20">
-        <div className="flex items-center gap-2"><ShieldCheck className="w-2.5 h-2.5 text-sky-900" /> PRO_KERNEL_6.2_VRC</div>
-        <div className="opacity-40">ENCRYPTED_HOSTING_ACTIVE</div>
-        <div className="hidden sm:block text-sky-500/10 tracking-[1em]">SYSTEM_READY</div>
+        <div className="flex items-center gap-2"><ShieldCheck className="w-2.5 h-2.5 text-sky-900" /> PRO_KERNEL_6.2_STABLE</div>
+        <div className="opacity-40">MISSION_CONTROL_ACTIVE</div>
       </footer>
       <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_bottom,#1e293b_0%,#020617_100%)] opacity-30"></div>
     </div>

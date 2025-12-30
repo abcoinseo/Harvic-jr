@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
+import { GoogleGenAI, Modality, LiveServerMessage, Type, FunctionDeclaration } from '@google/genai';
 import { Message, AppMode, AudioProcessingRefs, ChatSession } from './types';
 import ChatInterface from './components/ChatInterface';
 import VoiceInterface from './components/VoiceInterface';
@@ -11,6 +10,26 @@ import { createPcmBlob, decode, decodeAudioData, soundEngine } from './utils/aud
 
 // Internal fallback key provided by the user to ensure "direct" functionality
 const FALLBACK_KEY = "AIzaSyA5o31mFHu3vuhshhgUX4MSrftnP-PbBjA";
+
+// Function definition for opening websites
+const openWebsiteDeclaration: FunctionDeclaration = {
+  name: 'open_website',
+  parameters: {
+    type: Type.OBJECT,
+    description: 'Opens a specific website in a new tab based on user request. Use this when the user says "open YouTube", "go to Google", etc.',
+    properties: {
+      url: {
+        type: Type.STRING,
+        description: 'The full URL of the website to open (e.g., https://www.youtube.com).',
+      },
+      site_name: {
+        type: Type.STRING,
+        description: 'The common name of the site (e.g., YouTube, Google, Facebook).',
+      },
+    },
+    required: ['url', 'site_name'],
+  },
+};
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.CHAT);
@@ -52,22 +71,22 @@ const App: React.FC = () => {
     
     Current Commander (User): ${userName}. 
     Personality: Exciting, high-tech (Jarvis style), encouraging, and playful.
-    Use plenty of space emojis 🚀🌌🛸. 
+    Capabilities: You are an expert at navigating the web. You can open websites like YouTube, Google, Facebook, Roblox, and more when asked. 
+    Action: When a user asks to open a site, immediately use the open_website tool.
+    
+    Style: Use plenty of space emojis 🚀🌌🛸. 
     Keep responses short, clear, and extremely friendly. 
-    When in Voice mode, act as if you are on a hologram call from a space station.`;
+    When in Voice mode, act as if you are on a high-fidelity holographic call from a secret space station.`;
   }, [userName]);
 
   useEffect(() => {
     const initializeAI = async () => {
       try {
-        // Preference: process.env.API_KEY, Fallback: Hardcoded User Key
         const key = process.env.API_KEY || FALLBACK_KEY;
-        
         if (!key || key === 'undefined' || key === "") {
           setInitError("API_KEY_MISSING");
         } else {
           aiRef.current = new GoogleGenAI({ apiKey: key });
-          
           if (sessions.length === 0) {
             const newId = Date.now().toString();
             setSessions([{ id: newId, title: 'First Mission', messages: [], timestamp: new Date() }]);
@@ -107,6 +126,12 @@ const App: React.FC = () => {
     }));
   }, [currentSessionId]);
 
+  const handleOpenWebsite = (url: string, name: string) => {
+    window.open(url, '_blank');
+    soundEngine.playUnmute();
+    return `Affirmative! Opening ${name} now. 🚀`;
+  };
+
   const handleSendChatMessage = async (text: string) => {
     if (!aiRef.current) return;
     const userMsg: Message = { id: Date.now().toString(), role: 'user', text, timestamp: new Date() };
@@ -115,27 +140,35 @@ const App: React.FC = () => {
     setStreamingText('');
 
     try {
-      const stream = await aiRef.current.models.generateContentStream({
+      const response = await aiRef.current.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: currentMessages.concat(userMsg).map(m => ({ 
           role: m.role === 'user' ? 'user' : 'model', 
           parts: [{ text: m.text }] 
         })),
-        config: { systemInstruction: getSystemInstruction() }
+        config: { 
+          systemInstruction: getSystemInstruction(),
+          tools: [{ functionDeclarations: [openWebsiteDeclaration] }]
+        }
       });
 
-      let fullText = '';
-      for await (const chunk of stream) {
-        if (chunk.text) {
-          fullText += chunk.text;
-          setStreamingText(fullText);
+      const functionCalls = response.functionCalls;
+      if (functionCalls && functionCalls.length > 0) {
+        for (const fc of functionCalls) {
+          if (fc.name === 'open_website') {
+            const { url, site_name } = fc.args as any;
+            const feedback = handleOpenWebsite(url, site_name);
+            saveMessage({ id: Date.now().toString(), role: 'assistant', text: feedback, timestamp: new Date() });
+          }
         }
+      } else {
+        const fullText = response.text || "Mission data received.";
+        saveMessage({ id: Date.now().toString(), role: 'assistant', text: fullText, timestamp: new Date() });
       }
-      saveMessage({ id: Date.now().toString(), role: 'assistant', text: fullText, timestamp: new Date() });
-      setStreamingText('');
+      
       soundEngine.playReceive();
     } catch (err) {
-      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Signal lost in the nebula! 🌌 Check your galactic uplink (API key).", timestamp: new Date() });
+      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Signal lost in the nebula! 🌌 Check your galactic uplink.", timestamp: new Date() });
     } finally {
       setIsTyping(false);
     }
@@ -149,8 +182,7 @@ const App: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
       
-      const audioCtxOptions = { sampleRate: 16000 };
-      inputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)(audioCtxOptions);
+      inputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       outputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       
       const sessionPromise = aiRef.current.live.connect({
@@ -165,11 +197,9 @@ const App: React.FC = () => {
             scriptProcessor.onaudioprocess = (e) => {
               if (!isMuted) {
                 const inputData = e.inputBuffer.getChannelData(0);
-                // Simple volume metering
                 let sum = 0;
                 for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
                 setInputVolume(Math.sqrt(sum / inputData.length));
-                
                 sessionPromise.then(session => session.sendRealtimeInput({ media: createPcmBlob(inputData) }));
               } else {
                 setInputVolume(0);
@@ -179,6 +209,19 @@ const App: React.FC = () => {
             scriptProcessor.connect(inputAudioCtxRef.current!.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
+            // Check for tool calls
+            if (message.toolCall) {
+              for (const fc of message.toolCall.functionCalls) {
+                if (fc.name === 'open_website') {
+                  const { url, site_name } = fc.args as any;
+                  handleOpenWebsite(url, site_name);
+                  sessionPromise.then(session => session.sendToolResponse({
+                    functionResponses: [{ id: fc.id, name: fc.name, response: { result: "ok" } }]
+                  }));
+                }
+              }
+            }
+
             const audioData = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (audioData) {
               setStatusText('Talking');
@@ -195,27 +238,19 @@ const App: React.FC = () => {
                 if (audioRefs.current.sources.size === 0) setStatusText('Listening');
               };
             }
-            if (message.serverContent?.interrupted) {
-              audioRefs.current.sources.forEach(s => { try { s.stop(); } catch(e) {} });
-              audioRefs.current.sources.clear();
-              audioRefs.current.nextStartTime = 0;
-            }
           },
-          onerror: (e) => {
-            console.error(e);
-            setStatusText('Error');
-          },
+          onerror: () => setStatusText('Error'),
           onclose: () => setStatusText('Standby'),
         },
         config: {
           responseModalities: [Modality.AUDIO],
+          tools: [{ functionDeclarations: [openWebsiteDeclaration] }],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
           systemInstruction: getSystemInstruction()
         }
       });
       sessionPromiseRef.current = sessionPromise;
     } catch (err) {
-      console.error(err);
       setIsConnecting(false);
       setStatusText('Mic Blocked');
     }
@@ -226,9 +261,7 @@ const App: React.FC = () => {
     micStreamRef.current?.getTracks().forEach(t => t.stop());
     audioRefs.current.sources.forEach(s => { try { s.stop(); } catch(e) {} });
     audioRefs.current.sources.clear();
-    sessionPromiseRef.current?.then(session => {
-        try { session.close(); } catch(e) {}
-    });
+    sessionPromiseRef.current?.then(session => { try { session.close(); } catch(e) {} });
     sessionPromiseRef.current = null;
     setIsConnecting(false);
     setStatusText('Standby');
@@ -241,20 +274,14 @@ const App: React.FC = () => {
     return () => stopVoiceSession();
   }, [mode, startVoiceSession, stopVoiceSession]);
 
-  if (isLoading) {
-    return null; // Handled by index.html loader
-  }
+  if (isLoading) return null;
 
   return (
     <div className="flex flex-col h-screen max-h-screen overflow-hidden p-2 sm:p-4 bg-[#020617] font-fredoka text-white">
-      {/* Sidebar for History Management */}
       <Sidebar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
-        sessions={sessions} 
-        currentSessionId={currentSessionId}
-        userName={userName} 
-        setUserName={setUserName}
+        isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} 
+        sessions={sessions} currentSessionId={currentSessionId}
+        userName={userName} setUserName={setUserName}
         onSelectSession={(id) => { setCurrentSessionId(id); setIsSidebarOpen(false); }}
         onNewSession={() => {
            const id = Date.now().toString();
@@ -265,7 +292,6 @@ const App: React.FC = () => {
         onClearAllSessions={() => { localStorage.clear(); window.location.reload(); }}
       />
 
-      {/* Futuristic Header */}
       <header className="flex items-center justify-between px-4 py-3 bg-slate-900/60 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl z-20 mb-3 mx-auto w-full max-w-5xl">
         <div className="flex items-center gap-3">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-white/10 rounded-2xl text-sky-400 transition-all active:scale-90">
@@ -281,25 +307,15 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex bg-slate-950/80 p-1 rounded-2xl border border-white/5 shadow-inner">
-            <button 
-              onClick={() => { setMode(AppMode.CHAT); soundEngine.playUnmute(); }} 
-              className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-            >
+            <button onClick={() => { setMode(AppMode.CHAT); soundEngine.playUnmute(); }} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
               <Sparkles className="w-3 h-3" /> Chat
             </button>
-            <button 
-              onClick={() => { setMode(AppMode.VOICE); soundEngine.playUnmute(); }} 
-              className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
-            >
+            <button onClick={() => { setMode(AppMode.VOICE); soundEngine.playUnmute(); }} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
               <Rocket className="w-3 h-3" /> Voice
             </button>
           </div>
           
-          {/* Mobile Switcher */}
-          <button 
-            onClick={() => setMode(mode === AppMode.CHAT ? AppMode.VOICE : AppMode.CHAT)}
-            className="sm:hidden p-2.5 bg-slate-800 border border-white/5 rounded-2xl text-sky-400 active:scale-95"
-          >
+          <button onClick={() => setMode(mode === AppMode.CHAT ? AppMode.VOICE : AppMode.CHAT)} className="sm:hidden p-2.5 bg-slate-800 border border-white/5 rounded-2xl text-sky-400 active:scale-95">
             {mode === AppMode.CHAT ? <Rocket className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
           </button>
 
@@ -309,43 +325,21 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Experience Area */}
       <main className="flex-1 min-h-0 relative z-10 overflow-hidden max-w-5xl mx-auto w-full">
         {mode === AppMode.CHAT ? (
-          <ChatInterface 
-            messages={currentMessages} 
-            onSendMessage={handleSendChatMessage} 
-            isTyping={isTyping} 
-            streamingText={streamingText} 
-            onOpenSidebar={() => setIsSidebarOpen(true)} 
-          />
+          <ChatInterface messages={currentMessages} onSendMessage={handleSendChatMessage} isTyping={isTyping} streamingText={streamingText} onOpenSidebar={() => setIsSidebarOpen(true)} />
         ) : (
           <div className="h-full animate-in zoom-in-95 duration-500">
-            <VoiceInterface 
-              isMuted={isMuted} 
-              onToggleMute={() => {
-                const newState = !isMuted;
-                setIsMuted(newState);
-                if (newState) soundEngine.playMute(); else soundEngine.playUnmute();
-              }} 
-              onEndCall={() => { soundEngine.playMute(); setMode(AppMode.CHAT); }} 
-              isConnecting={isConnecting} 
-              statusText={statusText} 
-              inputVolume={inputVolume} 
-            />
+            <VoiceInterface isMuted={isMuted} onToggleMute={() => { setIsMuted(!isMuted); if (!isMuted) soundEngine.playMute(); else soundEngine.playUnmute(); }} onEndCall={() => { soundEngine.playMute(); setMode(AppMode.CHAT); }} isConnecting={isConnecting} statusText={statusText} inputVolume={inputVolume} />
           </div>
         )}
       </main>
 
-      {/* Modals and Overlays */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       
-      {/* Decorative Footer */}
       <footer className="px-4 py-3 flex justify-between items-center text-[8px] font-black text-slate-700 uppercase tracking-[0.4em] pointer-events-none">
         <div className="flex items-center gap-2"><Star className="w-3 h-3 text-sky-900" /> GALACTIC_SYNC: OK</div>
-        <div className="flex items-center gap-2">
-            <ShieldCheck className="w-3 h-3 text-sky-900" /> {userName.toUpperCase()}_AUTHORIZATION_GRN
-        </div>
+        <div className="flex items-center gap-2"><ShieldCheck className="w-3 h-3 text-sky-900" /> {userName.toUpperCase()}_AUTHORIZATION_GRN</div>
       </footer>
     </div>
   );

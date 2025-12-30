@@ -13,9 +13,18 @@ export interface ChatSession {
   timestamp: Date;
 }
 
-export enum AppMode {
+export enum OSState {
+  BOOTING = 'BOOTING',
+  LOGIN = 'LOGIN',
+  DESKTOP = 'DESKTOP'
+}
+
+export enum AppID {
   CHAT = 'CHAT',
-  VOICE = 'VOICE'
+  VOICE = 'VOICE',
+  VIDEO_CALL = 'VIDEO_CALL',
+  SETTINGS = 'SETTINGS',
+  TERMINAL = 'TERMINAL'
 }
 
 export interface AudioProcessingRefs {

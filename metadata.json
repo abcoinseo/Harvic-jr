@@ -1,7 +1,8 @@
 {
-  "name": "Harvic Jr. - Kids Pro AI",
-  "description": "A vibrant, futuristic, and friendly AI assistant for kids with advanced voice and chat controls.",
+  "name": "Harvic Jr. Pro v7.1",
+  "description": "Professional Jarvis-style AI Operating System with Chat, Voice, and Live Video capabilities.",
   "requestFramePermissions": [
+    "camera",
     "microphone"
   ]
 }

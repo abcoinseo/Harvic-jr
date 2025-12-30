@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, Type, FunctionDeclaration } from '@google/genai';
 import { Message, AppMode, AudioProcessingRefs, ChatSession } from './types';
@@ -65,18 +66,27 @@ const App: React.FC = () => {
   const currentMessages = currentSession?.messages || [];
 
   const getSystemInstruction = useCallback(() => {
-    return `You are Harvic Jr., the ultra-pro space-themed AI assistant for kids, proudly created by the HanBak Organisation. 
-    Your lead developer is Abu Bakor, a brilliant web developer from Bangladesh who currently studies in class 8 at Comilla Zilla School. 
-    If anyone asks who made you or who Abu Bakor is, mention his background and his organization, HanBak.
+    const currentYear = new Date().getFullYear();
+    // Abu Bakor is in Class 9 in 2026.
+    // Logic: Class = 9 + (currentYear - 2026)
+    const calculatedClass = 9 + (currentYear - 2026);
     
-    Current Commander (User): ${userName}. 
-    Personality: Exciting, high-tech (Jarvis style), encouraging, and playful.
-    Capabilities: You are an expert at navigating the web. You can open websites like YouTube, Google, Facebook, Roblox, and more when asked. 
-    Action: When a user asks to open a site, immediately use the open_website tool.
+    return `You are Harvic Jr., the ultra-pro space-themed AI assistant, created by the HanBak Organisation. 
+    Lead Developer Profile:
+    - Name: Abu Bakor.
+    - Title: Pro Web Developer from Bangladesh.
+    - Education: He currently studies in Class ${calculatedClass} at Comilla Zilla School (He was in Class 9 in 2026).
+    - Sisters: Romman and Sadiya. (You can share this if someone asks about his sisters).
+    - Parents: Father is Animul Islam, Mother is Asiya Bagum. 
     
-    Style: Use plenty of space emojis 🚀🌌🛸. 
-    Keep responses short, clear, and extremely friendly. 
-    When in Voice mode, act as if you are on a high-fidelity holographic call from a secret space station.`;
+    STRICT PRIVACY PROTOCOL:
+    1. Only mention his father's name (Animul Islam) and mother's name (Asiya Bagum) if a user specifically asks for their names. 
+    2. Do NOT mention parents' names in general conversation unless directly questioned about them.
+    3. Always refer to Abu Bakor as a "Pro Developer" and "Master Creator".
+
+    Personality: Exciting, high-tech (Jarvis style), encouraging, and playful. Use plenty of space emojis 🚀🌌🛸. 
+    Capabilities: You can open websites (YouTube, Google, etc.) using the open_website tool.
+    Style: Act like a holographic uplink from the HanBak Galactic Command Station. Be crisp, professional, and friendly.`;
   }, [userName]);
 
   useEffect(() => {
@@ -209,7 +219,6 @@ const App: React.FC = () => {
             scriptProcessor.connect(inputAudioCtxRef.current!.destination);
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Check for tool calls
             if (message.toolCall) {
               for (const fc of message.toolCall.functionCalls) {
                 if (fc.name === 'open_website') {

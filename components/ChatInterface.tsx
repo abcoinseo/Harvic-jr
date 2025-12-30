@@ -36,7 +36,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes avatar-breathe {
           0%, 100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.2)); }
-          50% { transform: scale(1.03); filter: drop-shadow(0 0 15px rgba(56, 189, 248, 0.4)); }
+          50% { transform: scale(1.04); filter: drop-shadow(0 0 15px rgba(56, 189, 248, 0.4)); }
         }
         @keyframes avatar-blink {
           0%, 94%, 96%, 100% { transform: scaleY(1); opacity: 1; }
@@ -51,15 +51,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
           25% { transform: translate(-1px, 1px) scale(1.15); }
           75% { transform: translate(1px, -1px) scale(1.1); }
         }
-        @keyframes pulse-core {
-          0%, 100% { opacity: 0.2; }
-          50% { opacity: 0.8; }
+        @keyframes pulse-hologram {
+          0%, 100% { opacity: 0.1; transform: scale(0.8); }
+          50% { opacity: 0.4; transform: scale(1.2); }
         }
         .ai-avatar-idle { animation: avatar-breathe 4s ease-in-out infinite; }
         .ai-avatar-blink { animation: avatar-blink 6s infinite; }
-        .ai-avatar-thinking { animation: avatar-think-spin 2s linear infinite; }
+        .ai-avatar-thinking { animation: avatar-think-spin 1.5s linear infinite; }
         .ai-avatar-speaking { animation: avatar-speaking-vibe 0.3s ease-in-out infinite; }
-        .core-pulse { animation: pulse-core 2s ease-in-out infinite; }
+        .hologram-pulse { animation: pulse-hologram 3s ease-in-out infinite; }
       `}} />
 
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #38bdf8 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
@@ -88,7 +88,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
                   <User className="w-6 h-6 text-white" />
                 ) : (
                   <>
-                    <div className="absolute inset-0 bg-sky-400/10 core-pulse" />
+                    <div className="absolute inset-0 bg-sky-400/10 hologram-pulse rounded-full" />
                     <Bot className="w-6 h-6 text-sky-400 ai-avatar-blink" />
                   </>
                 )}
@@ -113,11 +113,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
         {(streamingText || isTyping) && (
           <div className="flex justify-start animate-in fade-in slide-in-from-left-4">
             <div className="flex items-end gap-4">
-              <div className={`w-12 h-12 rounded-[1.2rem] bg-slate-800 border-2 flex items-center justify-center relative overflow-hidden ${
+              <div className={`w-12 h-12 rounded-[1.2rem] bg-slate-800 border-2 flex items-center justify-center relative overflow-hidden transition-all duration-300 ${
                 streamingText ? 'border-sky-400 ai-avatar-speaking' : 'border-sky-500/40'
               }`}>
                 {isTyping && !streamingText && (
-                  <div className="absolute inset-1 border-2 border-sky-500/30 border-t-sky-400 rounded-full ai-avatar-thinking" />
+                  <div className="absolute inset-1 border-2 border-transparent border-t-sky-400 rounded-full ai-avatar-thinking" />
                 )}
                 <Bot className={`w-6 h-6 text-sky-400 ${streamingText ? '' : 'ai-avatar-blink'}`} />
               </div>
@@ -144,7 +144,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
             type="text" 
             value={inputValue} 
             onChange={(e) => setInputValue(e.target.value)} 
-            placeholder="Tell me what to do... 🚀" 
+            placeholder="Tell Harvic what to do... 🚀" 
             className="flex-1 bg-slate-900/80 border-2 border-white/5 rounded-3xl py-4 sm:py-5 pl-14 pr-6 text-sm sm:text-base text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500/40 transition-all shadow-inner" 
           />
           <button 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Message, AppMode, AudioProcessingRefs, ChatSession } from './types';
@@ -6,12 +5,15 @@ import ChatInterface from './components/ChatInterface';
 import VoiceInterface from './components/VoiceInterface';
 import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
-import { ShieldAlert, RefreshCw, Zap, Rocket, Star, ShieldCheck, Menu, Settings } from 'lucide-react';
+import { ShieldAlert, RefreshCw, Zap, Rocket, Star, ShieldCheck, Menu, Settings, Sparkles } from 'lucide-react';
 import { createPcmBlob, decode, decodeAudioData, soundEngine } from './utils/audio';
+
+// Internal fallback key provided by the user to ensure "direct" functionality
+const FALLBACK_KEY = "AIzaSyA5o31mFHu3vuhshhgUX4MSrftnP-PbBjA";
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.CHAT);
-  const [userName, setUserName] = useState<string>(() => localStorage.getItem('harvic_user_name') || 'Commander');
+  const [userName, setUserName] = useState<string>(() => localStorage.getItem('harvic_user_name') || 'Explorer');
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
       const saved = localStorage.getItem('harvic_sessions');
@@ -43,23 +45,28 @@ const App: React.FC = () => {
   const currentMessages = currentSession?.messages || [];
 
   const getSystemInstruction = useCallback(() => {
-    return `You are Harvic Jr., the Pro Galactic AI Assistant for ${userName}. 
-    Version: 6.2 Pro. Mode: Helpful, Kids-friendly, and Jarvis-like. 
-    Use emojis like 🚀, 🛸, 🌌. Keep responses energetic and encouraging.`;
+    return `You are Harvic Jr., the ultra-pro space-themed AI assistant for kids. 
+    User name: ${userName}. 
+    Personality: Exciting, high-tech (Jarvis style), encouraging, and playful.
+    Use plenty of space emojis 🚀🌌🛸. 
+    Keep responses short, clear, and extremely friendly. 
+    When in Voice mode, act as if you are on a hologram call from a space station.`;
   }, [userName]);
 
-  // Use process.env.API_KEY directly as per guidelines. Assume it is pre-configured and valid.
   useEffect(() => {
-    const initialize = async () => {
+    const initializeAI = async () => {
       try {
-        const key = process.env.API_KEY;
-        if (!key || key === 'undefined') {
+        // Preference: process.env.API_KEY, Fallback: Hardcoded User Key
+        const key = process.env.API_KEY || FALLBACK_KEY;
+        
+        if (!key || key === 'undefined' || key === "") {
           setInitError("API_KEY_MISSING");
         } else {
           aiRef.current = new GoogleGenAI({ apiKey: key });
+          
           if (sessions.length === 0) {
             const newId = Date.now().toString();
-            setSessions([{ id: newId, title: 'Initial Log', messages: [], timestamp: new Date() }]);
+            setSessions([{ id: newId, title: 'First Mission', messages: [], timestamp: new Date() }]);
             setCurrentSessionId(newId);
           } else if (!currentSessionId) {
             setCurrentSessionId(sessions[0].id);
@@ -68,10 +75,10 @@ const App: React.FC = () => {
       } catch (err) {
         setInitError("SYSTEM_CRASH");
       } finally {
-        setTimeout(() => setIsLoading(false), 800);
+        setTimeout(() => setIsLoading(false), 1200);
       }
     };
-    initialize();
+    initializeAI();
   }, [sessions.length, currentSessionId]);
 
   useEffect(() => {
@@ -87,8 +94,8 @@ const App: React.FC = () => {
       if (s.id === currentSessionId) {
         const updated = [...s.messages, msg];
         let title = s.title;
-        if (s.title === 'Initial Log' && msg.role === 'user') {
-          title = msg.text.slice(0, 15) + '...';
+        if ((s.title === 'First Mission' || s.title === 'New Mission') && msg.role === 'user') {
+          title = msg.text.length > 15 ? msg.text.slice(0, 15) + '...' : msg.text;
         }
         return { ...s, messages: updated, title };
       }
@@ -124,7 +131,7 @@ const App: React.FC = () => {
       setStreamingText('');
       soundEngine.playReceive();
     } catch (err) {
-      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Signal lost! 🛸 Check the API key in Vercel settings.", timestamp: new Date() });
+      saveMessage({ id: Date.now().toString(), role: 'assistant', text: "Signal lost in the nebula! 🌌 Check your galactic uplink (API key).", timestamp: new Date() });
     } finally {
       setIsTyping(false);
     }
@@ -137,8 +144,10 @@ const App: React.FC = () => {
       setStatusText('Syncing...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
-      inputAudioCtxRef.current = new AudioContext({ sampleRate: 16000 });
-      outputAudioCtxRef.current = new AudioContext({ sampleRate: 24000 });
+      
+      const audioCtxOptions = { sampleRate: 16000 };
+      inputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)(audioCtxOptions);
+      outputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       
       const sessionPromise = aiRef.current.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -151,7 +160,15 @@ const App: React.FC = () => {
             scriptProcessorRef.current = scriptProcessor;
             scriptProcessor.onaudioprocess = (e) => {
               if (!isMuted) {
-                sessionPromise.then(session => session.sendRealtimeInput({ media: createPcmBlob(e.inputBuffer.getChannelData(0)) }));
+                const inputData = e.inputBuffer.getChannelData(0);
+                // Simple volume metering
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+                setInputVolume(Math.sqrt(sum / inputData.length));
+                
+                sessionPromise.then(session => session.sendRealtimeInput({ media: createPcmBlob(inputData) }));
+              } else {
+                setInputVolume(0);
               }
             };
             source.connect(scriptProcessor);
@@ -174,8 +191,16 @@ const App: React.FC = () => {
                 if (audioRefs.current.sources.size === 0) setStatusText('Listening');
               };
             }
+            if (message.serverContent?.interrupted) {
+              audioRefs.current.sources.forEach(s => { try { s.stop(); } catch(e) {} });
+              audioRefs.current.sources.clear();
+              audioRefs.current.nextStartTime = 0;
+            }
           },
-          onerror: () => setStatusText('Logic Error'),
+          onerror: (e) => {
+            console.error(e);
+            setStatusText('Error');
+          },
           onclose: () => setStatusText('Standby'),
         },
         config: {
@@ -186,8 +211,9 @@ const App: React.FC = () => {
       });
       sessionPromiseRef.current = sessionPromise;
     } catch (err) {
+      console.error(err);
       setIsConnecting(false);
-      setStatusText('Access Blocked');
+      setStatusText('Mic Blocked');
     }
   }, [isMuted, getSystemInstruction]);
 
@@ -196,10 +222,13 @@ const App: React.FC = () => {
     micStreamRef.current?.getTracks().forEach(t => t.stop());
     audioRefs.current.sources.forEach(s => { try { s.stop(); } catch(e) {} });
     audioRefs.current.sources.clear();
-    sessionPromiseRef.current?.then(session => session.close());
+    sessionPromiseRef.current?.then(session => {
+        try { session.close(); } catch(e) {}
+    });
     sessionPromiseRef.current = null;
     setIsConnecting(false);
     setStatusText('Standby');
+    setInputVolume(0);
   }, []);
 
   useEffect(() => {
@@ -209,75 +238,110 @@ const App: React.FC = () => {
   }, [mode, startVoiceSession, stopVoiceSession]);
 
   if (isLoading) {
-    return (
-      <div className="h-screen w-screen bg-[#020617] flex flex-col items-center justify-center">
-        <Zap className="w-12 h-12 text-sky-400 animate-bounce mb-4" />
-        <h1 className="text-white font-bold text-xs tracking-widest uppercase animate-pulse">Neural Core Loading</h1>
-      </div>
-    );
-  }
-
-  if (initError) {
-    return (
-      <div className="h-screen w-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full p-10 bg-slate-900 border-2 border-red-500/20 rounded-[3rem] shadow-2xl text-center">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-6 animate-pulse" />
-          <h2 className="text-xl font-bold text-white uppercase mb-4 tracking-tighter">Mission Interrupted</h2>
-          <p className="text-slate-400 text-xs mb-8 leading-relaxed">
-            {initError === "API_KEY_MISSING" 
-              ? "The Galactic API Key is missing. Go to Vercel Project Settings > Environment Variables and add API_KEY." 
-              : "The system encountered a logic loop. Please reboot the AI interface."}
-          </p>
-          <button onClick={() => window.location.reload()} className="w-full py-4 bg-sky-500 hover:bg-sky-400 text-white rounded-2xl font-bold uppercase transition-all flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4" /> Reboot Harvic Jr.
-          </button>
-        </div>
-      </div>
-    );
+    return null; // Handled by index.html loader
   }
 
   return (
-    <div className="flex flex-col h-screen max-h-screen overflow-hidden p-2 bg-[#020617] font-fredoka">
+    <div className="flex flex-col h-screen max-h-screen overflow-hidden p-2 sm:p-4 bg-[#020617] font-fredoka text-white">
+      {/* Sidebar for History Management */}
       <Sidebar 
-        isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} 
-        sessions={sessions} currentSessionId={currentSessionId}
-        userName={userName} setUserName={setUserName}
-        onSelectSession={setCurrentSessionId}
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} 
+        sessions={sessions} 
+        currentSessionId={currentSessionId}
+        userName={userName} 
+        setUserName={setUserName}
+        onSelectSession={(id) => { setCurrentSessionId(id); setIsSidebarOpen(false); }}
         onNewSession={() => {
            const id = Date.now().toString();
            setSessions(p => [{ id, title: 'New Mission', messages: [], timestamp: new Date() }, ...p]);
            setCurrentSessionId(id);
+           setIsSidebarOpen(false);
         }}
         onClearAllSessions={() => { localStorage.clear(); window.location.reload(); }}
       />
 
-      <header className="flex items-center justify-between px-4 py-3 bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl z-20 mb-2">
+      {/* Futuristic Header */}
+      <header className="flex items-center justify-between px-4 py-3 bg-slate-900/60 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl z-20 mb-3 mx-auto w-full max-w-5xl">
         <div className="flex items-center gap-3">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-white/5 rounded-xl text-slate-400"><Menu className="w-5 h-5" /></button>
-          <h1 className="text-sm font-bold text-white tracking-widest uppercase leading-none">Harvic <span className="text-sky-400">Pro</span></h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
-            <button onClick={() => setMode(AppMode.CHAT)} className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${mode === AppMode.CHAT ? 'bg-sky-500 text-white' : 'text-slate-500'}`}>Chat</button>
-            <button onClick={() => setMode(AppMode.VOICE)} className={`px-4 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${mode === AppMode.VOICE ? 'bg-purple-600 text-white' : 'text-slate-500'}`}>Voice</button>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 hover:bg-white/10 rounded-2xl text-sky-400 transition-all active:scale-90">
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex flex-col">
+            <h1 className="text-base sm:text-lg font-black tracking-widest uppercase leading-none flex items-center gap-2">
+              HARVIC <span className="text-sky-400">PRO</span>
+            </h1>
+            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-0.5">Quantum Assistant v6.2</span>
           </div>
-          <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-slate-400 hover:text-white bg-slate-800 border border-white/5 rounded-xl"><Settings className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex bg-slate-950/80 p-1 rounded-2xl border border-white/5 shadow-inner">
+            <button 
+              onClick={() => { setMode(AppMode.CHAT); soundEngine.playUnmute(); }} 
+              className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.CHAT ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              <Sparkles className="w-3 h-3" /> Chat
+            </button>
+            <button 
+              onClick={() => { setMode(AppMode.VOICE); soundEngine.playUnmute(); }} 
+              className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${mode === AppMode.VOICE ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              <Rocket className="w-3 h-3" /> Voice
+            </button>
+          </div>
+          
+          {/* Mobile Switcher */}
+          <button 
+            onClick={() => setMode(mode === AppMode.CHAT ? AppMode.VOICE : AppMode.CHAT)}
+            className="sm:hidden p-2.5 bg-slate-800 border border-white/5 rounded-2xl text-sky-400 active:scale-95"
+          >
+            {mode === AppMode.CHAT ? <Rocket className="w-5 h-5" /> : <Sparkles className="w-5 h-5" />}
+          </button>
+
+          <button onClick={() => setIsSettingsOpen(true)} className="p-2.5 text-slate-400 hover:text-white bg-slate-800 border border-white/5 rounded-2xl transition-all">
+            <Settings className="w-5 h-5" />
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 relative z-10 overflow-hidden">
+      {/* Main Experience Area */}
+      <main className="flex-1 min-h-0 relative z-10 overflow-hidden max-w-5xl mx-auto w-full">
         {mode === AppMode.CHAT ? (
-          <ChatInterface messages={currentMessages} onSendMessage={handleSendChatMessage} isTyping={isTyping} streamingText={streamingText} onOpenSidebar={() => setIsSidebarOpen(true)} />
+          <ChatInterface 
+            messages={currentMessages} 
+            onSendMessage={handleSendChatMessage} 
+            isTyping={isTyping} 
+            streamingText={streamingText} 
+            onOpenSidebar={() => setIsSidebarOpen(true)} 
+          />
         ) : (
-          <VoiceInterface isMuted={isMuted} onToggleMute={() => setIsMuted(!isMuted)} onEndCall={() => setMode(AppMode.CHAT)} isConnecting={isConnecting} statusText={statusText} inputVolume={inputVolume} />
+          <div className="h-full animate-in zoom-in-95 duration-500">
+            <VoiceInterface 
+              isMuted={isMuted} 
+              onToggleMute={() => {
+                const newState = !isMuted;
+                setIsMuted(newState);
+                if (newState) soundEngine.playMute(); else soundEngine.playUnmute();
+              }} 
+              onEndCall={() => { soundEngine.playMute(); setMode(AppMode.CHAT); }} 
+              isConnecting={isConnecting} 
+              statusText={statusText} 
+              inputVolume={inputVolume} 
+            />
+          </div>
         )}
       </main>
 
+      {/* Modals and Overlays */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       
-      <footer className="px-4 py-2 flex justify-between items-center text-[8px] font-bold text-slate-700 uppercase tracking-widest">
-        <div className="flex items-center gap-2"><Star className="w-3 h-3 text-sky-900" /> MISSION_ACTIVE</div>
-        <div className="flex items-center gap-2"><ShieldCheck className="w-3 h-3 text-sky-900" /> ENCRYPTED_LINK</div>
+      {/* Decorative Footer */}
+      <footer className="px-4 py-3 flex justify-between items-center text-[8px] font-black text-slate-700 uppercase tracking-[0.4em] pointer-events-none">
+        <div className="flex items-center gap-2"><Star className="w-3 h-3 text-sky-900" /> GALACTIC_SYNC: OK</div>
+        <div className="flex items-center gap-2">
+            <ShieldCheck className="w-3 h-3 text-sky-900" /> {userName.toUpperCase()}_AUTHORIZATION_GRN
+        </div>
       </footer>
     </div>
   );

@@ -1,6 +1,5 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Rocket, Globe, ExternalLink, Zap, Sparkles, Activity, ShieldCheck, Terminal, MoreVertical, Loader2, Waves, Cpu, Radio, Share2, Info } from 'lucide-react';
+import { Send, User, Bot, Rocket, Zap, Sparkles, Activity, ShieldCheck, Cpu, Waves, Radio } from 'lucide-react';
 import { Message } from '../types';
 import { soundEngine } from '../utils/audio';
 
@@ -8,12 +7,11 @@ interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (text: string) => void;
   isTyping: boolean;
-  groundingMetadata?: any[];
   streamingText?: string;
   onOpenSidebar: () => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isTyping, groundingMetadata, streamingText, onOpenSidebar }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, isTyping, streamingText, onOpenSidebar }) => {
   const [inputValue, setInputValue] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -33,66 +31,88 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/30 border border-white/10 rounded-[2rem] overflow-hidden shadow-2xl relative">
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+    <div className="flex flex-col h-full bg-slate-900/30 border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl relative backdrop-blur-xl animate-in zoom-in-95 duration-500">
+      
+      {/* Dynamic Background Pattern */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #38bdf8 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
+
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-8 scroll-smooth scrollbar-hide">
         {messages.length === 0 && !streamingText && (
-          <div className="h-full flex flex-col items-center justify-center text-sky-400/20">
-            <Rocket className="w-16 h-16 animate-bounce mb-4" />
-            <p className="text-xs font-bold uppercase tracking-[0.3em]">Start a New Mission!</p>
+          <div className="h-full flex flex-col items-center justify-center text-sky-400/20 gap-6">
+            <div className="relative">
+              <Rocket className="w-24 h-24 animate-bounce" />
+              <div className="absolute -bottom-4 -left-4 w-12 h-12 bg-sky-500/20 blur-xl animate-pulse"></div>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+               <p className="text-sm font-black uppercase tracking-[0.4em]">Ready for Liftoff!</p>
+               <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest italic">Signal quality: 100%</span>
+            </div>
           </div>
         )}
         
-        {messages.map((msg, idx) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-4 duration-300`}>
-            <div className={`flex max-w-[90%] md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-3`}>
-              <div className={`w-10 h-10 rounded-2xl shrink-0 flex items-center justify-center shadow-lg ${
-                msg.role === 'user' ? 'bg-sky-500' : 'bg-slate-800 border border-white/10'
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-6 duration-500`}>
+            <div className={`flex max-w-[90%] sm:max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} items-end gap-4`}>
+              <div className={`w-12 h-12 rounded-[1.2rem] shrink-0 flex items-center justify-center shadow-xl transform transition-transform hover:scale-110 ${
+                msg.role === 'user' ? 'bg-gradient-to-br from-sky-400 to-sky-600' : 'bg-slate-800 border-2 border-sky-500/20'
               }`}>
-                {msg.role === 'user' ? <User className="w-5 h-5 text-white" /> : <Bot className="w-5 h-5 text-sky-400" />}
+                {msg.role === 'user' ? <User className="w-6 h-6 text-white" /> : <Bot className="w-6 h-6 text-sky-400" />}
               </div>
 
               <div className="flex flex-col gap-2">
-                <div className={`px-4 py-3 rounded-3xl text-sm md:text-base leading-relaxed ${
+                <div className={`px-6 py-4 rounded-[1.8rem] text-sm sm:text-base leading-relaxed shadow-2xl transition-all ${
                   msg.role === 'user' 
-                  ? 'bg-sky-500 text-white rounded-br-none shadow-sky-500/20' 
-                  : 'bg-white/5 text-sky-50 border border-white/10 rounded-bl-none backdrop-blur-xl'
+                  ? 'bg-sky-500 text-white rounded-br-none' 
+                  : 'bg-white/5 text-sky-50 border border-white/10 rounded-bl-none backdrop-blur-3xl'
                 }`}>
                   {msg.text}
                 </div>
+                <span className="text-[8px] font-black text-slate-700 uppercase tracking-widest px-2">
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
               </div>
             </div>
           </div>
         ))}
 
         {(streamingText || isTyping) && (
-          <div className="flex justify-start animate-pulse">
-            <div className="flex items-end gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-slate-800 border border-sky-500/30 flex items-center justify-center">
-                <Bot className="w-5 h-5 text-sky-400" />
+          <div className="flex justify-start animate-in fade-in slide-in-from-left-4">
+            <div className="flex items-end gap-4">
+              <div className="w-12 h-12 rounded-[1.2rem] bg-slate-800 border-2 border-sky-500/40 flex items-center justify-center">
+                <Radio className="w-6 h-6 text-sky-400 animate-pulse" />
               </div>
-              <div className="bg-white/5 border border-white/10 rounded-3xl rounded-bl-none px-4 py-3 text-sky-100 min-h-[2.5rem] flex items-center">
-                {streamingText || "..."}
+              <div className="bg-white/5 border border-white/10 rounded-[1.8rem] rounded-bl-none px-6 py-4 text-sky-100 backdrop-blur-3xl flex items-center gap-2">
+                {streamingText || (
+                   <div className="flex gap-1.5 items-center px-2">
+                      <div className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce"></div>
+                      <div className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                      <div className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                   </div>
+                )}
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 bg-slate-950/80 border-t border-white/10 backdrop-blur-2xl">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
+      <form onSubmit={handleSubmit} className="p-4 sm:p-6 bg-slate-950/80 border-t border-white/10 backdrop-blur-3xl">
+        <div className="max-w-4xl mx-auto flex items-center gap-4 relative">
+          <div className="absolute left-6 text-sky-500/50 pointer-events-none">
+            <Sparkles className="w-5 h-5" />
+          </div>
           <input 
             type="text" 
             value={inputValue} 
             onChange={(e) => setInputValue(e.target.value)} 
-            placeholder="Type a command... 🚀" 
-            className="flex-1 bg-slate-900 border border-white/10 rounded-2xl py-4 px-6 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500/50 transition-all shadow-inner" 
+            placeholder="Talk to Harvic Jr... 🚀" 
+            className="flex-1 bg-slate-900/80 border-2 border-white/5 rounded-3xl py-4 sm:py-5 pl-14 pr-6 text-sm sm:text-base text-white placeholder:text-slate-600 focus:outline-none focus:border-sky-500/40 transition-all shadow-inner" 
           />
           <button 
             type="submit" 
             disabled={!inputValue.trim() || isTyping}
-            className="p-4 bg-sky-500 hover:bg-sky-400 text-white rounded-2xl shadow-xl shadow-sky-500/20 disabled:opacity-20 active:scale-90 transition-all"
+            className="p-4 sm:p-5 bg-gradient-to-br from-sky-400 to-sky-600 text-white rounded-3xl shadow-[0_0_20px_rgba(14,165,233,0.3)] disabled:opacity-20 active:scale-90 transition-all group"
           >
-            <Send className="w-6 h-6" />
+            <Send className="w-7 h-7 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
           </button>
         </div>
       </form>

@@ -23,6 +23,8 @@ export enum AppID {
   CHAT = 'CHAT',
   VOICE = 'VOICE',
   VIDEO_CALL = 'VIDEO_CALL',
+  IQ_TEST = 'IQ_TEST',
+  IELTS = 'IELTS',
   SETTINGS = 'SETTINGS',
   TERMINAL = 'TERMINAL'
 }

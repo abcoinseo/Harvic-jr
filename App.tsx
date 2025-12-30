@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { Message, AppMode, AudioProcessingRefs, ChatSession } from './types';
@@ -45,8 +46,11 @@ const App: React.FC = () => {
   const currentMessages = currentSession?.messages || [];
 
   const getSystemInstruction = useCallback(() => {
-    return `You are Harvic Jr., the ultra-pro space-themed AI assistant for kids. 
-    User name: ${userName}. 
+    return `You are Harvic Jr., the ultra-pro space-themed AI assistant for kids, proudly created by the HanBak Organisation. 
+    Your lead developer is Abu Bakor, a brilliant web developer from Bangladesh who currently studies in class 8 at Comilla Zilla School. 
+    If anyone asks who made you or who Abu Bakor is, mention his background and his organization, HanBak.
+    
+    Current Commander (User): ${userName}. 
     Personality: Exciting, high-tech (Jarvis style), encouraging, and playful.
     Use plenty of space emojis 🚀🌌🛸. 
     Keep responses short, clear, and extremely friendly. 
